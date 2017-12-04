@@ -390,29 +390,30 @@ var configFile string
 var config *ss.Config
 
 func main() {
-	log.SetOutput(os.Stdout)
+	log.SetOutput(os.Stdout) //日志输出目录
 
 	var cmdConfig ss.Config
 	var printVer bool
 	var core int
 
-	flag.BoolVar(&printVer, "version", false, "print version")
-	flag.StringVar(&configFile, "c", "config.json", "specify config file")
-	flag.StringVar(&cmdConfig.Password, "k", "", "password")
-	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
-	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
-	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
-	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
-	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
-	flag.BoolVar(&udp, "u", false, "UDP Relay")
+	flag.BoolVar(&printVer, "version", false, "print version")                                                //打印版本
+	flag.StringVar(&configFile, "c", "config.json", "specify config file")                                    //加载配置文件
+	flag.StringVar(&cmdConfig.Password, "k", "", "password")                                                  //服务端密码
+	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")                                                 //服务端端口
+	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")                                           //超时时间
+	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")                     //加密方式
+	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime") //cpu数目
+	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")                                          //debug模式
+	flag.BoolVar(&udp, "u", false, "UDP Relay")                                                               //是否使用udp协议
 	flag.Parse()
 
+	//打印版本
 	if printVer {
-		ss.PrintVersion()
+		ss.PrintVersion() //util.go
 		os.Exit(0)
 	}
 
-	ss.SetDebug(debug)
+	ss.SetDebug(debug) //debug模式
 
 	if strings.HasSuffix(cmdConfig.Method, "-auth") {
 		cmdConfig.Method = cmdConfig.Method[:len(cmdConfig.Method)-5]
