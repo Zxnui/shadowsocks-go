@@ -1,7 +1,7 @@
-#简介
+# 简介  
 如果你只是想使用shadowsocks，请访问[shadowsocks](https://github.com/shadowsocks/shadowsocks-go).
 
-###项目目录
+## 项目目录
 - cmd  
 1. server.go 
 //服务入口
