@@ -111,6 +111,7 @@ var nextLogConnCnt int = logCntDelta
 func handleConnection(conn *ss.Conn, auth bool) {
 	var host string
 
+    //简单的记录链接数
 	connCnt++ // this maybe not accurate, but should be enough
 	if connCnt-nextLogConnCnt >= 0 {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
@@ -339,7 +340,7 @@ func run(port, password string, auth bool) {
 				continue
 			}
 		}
-		go handleConnection(ss.NewConn(conn, cipher.Copy()), auth)
+		go handleConnection(ss.NewConn(conn, cipher.Copy()), auth)//处理链接
 	}
 }
 

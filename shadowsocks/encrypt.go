@@ -21,12 +21,14 @@ import (
 //空密码错误
 var errEmptyPassword = errors.New("empty key")
 
+//md5
 func md5sum(d []byte) []byte {
 	h := md5.New()
 	h.Write(d)
 	return h.Sum(nil)
 }
 
+//password 加密
 func evpBytesToKey(password string, keyLen int) (key []byte) {
 	const md5Len = 16
 
@@ -193,7 +195,7 @@ type Cipher struct {
 	key  []byte
 	info *cipherInfo
 	ota  bool // one-time auth
-	iv   []byte
+	iv   []byte	
 }
 
 // NewCipher creates a cipher that can be used in Dial() etc.
@@ -217,7 +219,7 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 
 	key := evpBytesToKey(password, mi.keyLen)
 
-	c = &Cipher{key: key, info: mi}
+	c = &Cipher{key: key, info: mi}//key 加密后的password ， mi 加密方式
 
 	if err != nil {
 		return nil, err
