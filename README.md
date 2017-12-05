@@ -13,15 +13,20 @@
 - script  
 - shadowsocks  
 1. config.go 
-//对配置文件的解析
+//对配置文件的解析  
+
 2. conn.go 
-//tcp代理实现
+//tcp代理实现  
+
 3. encrypt.go 
-//提供统一加密解码
+//提供统一加密解码  
+
 4. leakybuf.go 
-//缓冲
+//缓冲  
+
 5. log.go 
-//日志
+//日志  
+
 6. mergesort.go 
 7. pipe.go
 8. proxy.go

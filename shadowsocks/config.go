@@ -37,6 +37,7 @@ type Config struct {
 	ServerPassword [][]string `json:"server_password"`
 }
 
+//配置文件中，超时时间
 var readTimeout time.Duration
 
 func (config *Config) GetServerArray() []string {
@@ -70,23 +71,27 @@ typeError:
 	panic(fmt.Sprintf("Config.Server type error %v", reflect.TypeOf(config.Server)))
 }
 
+//配置文件，解析到config结构中
 func ParseConfig(path string) (config *Config, err error) {
-	file, err := os.Open(path) // For read access.
+	file, err := os.Open(path) // 读取配置文件
 	if err != nil {
 		return
 	}
 	defer file.Close()
 
-	data, err := ioutil.ReadAll(file)
+	data, err := ioutil.ReadAll(file) //从文件中读取，直至遇到错误或EOF，然后返回它所读取的数据
 	if err != nil {
 		return
 	}
 
 	config = &Config{}
-	if err = json.Unmarshal(data, config); err != nil {
+	if err = json.Unmarshal(data, config); err != nil { //配置文件是json格式的数据，解析配置文件的值，结果存储到config中
 		return nil, err
 	}
-	readTimeout = time.Duration(config.Timeout) * time.Second
+	readTimeout = time.Duration(config.Timeout) * time.Second //读取配置文件中超时时间
+
+	//加密方法，后缀-auth的情况，需要加密
+	//server之前好像已经处理过了，为何还在在处理一次？
 	if strings.HasSuffix(strings.ToLower(config.Method), "-auth") {
 		config.Method = config.Method[:len(config.Method)-5]
 		config.Auth = true
@@ -94,12 +99,12 @@ func ParseConfig(path string) (config *Config, err error) {
 	return
 }
 
+//debug模式
 func SetDebug(d DebugLog) {
 	Debug = d
 }
 
-// Useful for command line to override options specified in config file
-// Debug is not updated.
+// 用于命令行覆盖配置文件中指定的选项
 func UpdateConfig(old, new *Config) {
 	// Using reflection here is not necessary, but it's a good exercise.
 	// For more information on reflections in Go, read "The Laws of Reflection"
@@ -113,7 +118,7 @@ func UpdateConfig(old, new *Config) {
 		oldField := oldVal.Field(i)
 		// log.Printf("%d: %s %s = %v\n", i,
 		// typeOfT.Field(i).Name, newField.Type(), newField.Interface())
-		switch newField.Kind() {
+		switch newField.Kind() { //根据不同的类型，处理不同数据
 		case reflect.Interface:
 			if fmt.Sprintf("%v", newField.Interface()) != "" {
 				oldField.Set(newField)
@@ -132,5 +137,5 @@ func UpdateConfig(old, new *Config) {
 	}
 
 	old.Timeout = new.Timeout
-	readTimeout = time.Duration(old.Timeout) * time.Second
+	readTimeout = time.Duration(old.Timeout) * time.Second //读取配置文件中超时时间
 }

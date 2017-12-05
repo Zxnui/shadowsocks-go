@@ -178,16 +178,19 @@ func handleConnection(conn *ss.Conn, auth bool) {
 	return
 }
 
+//tcp 密码和监听
 type PortListener struct {
 	password string
 	listener net.Listener
 }
 
+//udp 密码和监听
 type UDPListener struct {
 	password string
 	listener *net.UDPConn
 }
 
+//互斥锁，保存端口和密码/监听。可能更新密码操作，可能存在并发访问，加锁
 type PasswdManager struct {
 	sync.Mutex
 	portListener map[string]*PortListener
@@ -220,6 +223,7 @@ func (pm *PasswdManager) getUDP(port string) (pl *UDPListener, ok bool) {
 	return
 }
 
+//关闭监听，同时删除端口和监听数据
 func (pm *PasswdManager) del(port string) {
 	pl, ok := pm.get(port)
 	if !ok {
@@ -247,19 +251,19 @@ func (pm *PasswdManager) del(port string) {
 // and password manager.
 func (pm *PasswdManager) updatePortPasswd(port, password string, auth bool) {
 	pl, ok := pm.get(port)
-	if !ok {
+	if !ok { //监听不存在
 		log.Printf("new port %s added\n", port)
 	} else {
-		if pl.password == password {
+		if pl.password == password { //密码相同
 			return
 		}
 		log.Printf("closing port %s to update password\n", port)
-		pl.listener.Close()
+		pl.listener.Close() //密码不同，关闭监听
 	}
 	// run will add the new port listener to passwdManager.
 	// So there maybe concurrent access to passwdManager and we need lock to protect it.
-	go run(port, password, auth)
-	if udp {
+	go run(port, password, auth) //重新监听
+	if udp {                     //udp，直接关闭监听，重新监听
 		pl, _ := pm.getUDP(port)
 		pl.listener.Close()
 		go runUDP(port, password, auth)
@@ -310,16 +314,16 @@ func waitSignal() {
 }
 
 func run(port, password string, auth bool) {
-	ln, err := net.Listen("tcp", ":"+port)
+	ln, err := net.Listen("tcp", ":"+port) //监听tcp协议 所有ip地址 对port的链接
 	if err != nil {
 		log.Printf("error listening port %v: %v\n", port, err)
 		os.Exit(1)
 	}
-	passwdManager.add(port, password, ln)
-	var cipher *ss.Cipher
+	passwdManager.add(port, password, ln) //统一使用passwdManager管理所有的端口和监听
+	var cipher *ss.Cipher                 //密码相关，在encrypt.go中
 	log.Printf("server listening port %v ...\n", port)
 	for {
-		conn, err := ln.Accept()
+		conn, err := ln.Accept() //等待链接
 		if err != nil {
 			// listener maybe closed to update password
 			debug.Printf("accept error: %v\n", err)
@@ -328,7 +332,7 @@ func run(port, password string, auth bool) {
 		// Creating cipher upon first connection.
 		if cipher == nil {
 			log.Println("creating cipher for port:", port)
-			cipher, err = ss.NewCipher(config.Method, password)
+			cipher, err = ss.NewCipher(config.Method, password) //密码加密，方法在encrypt.go中
 			if err != nil {
 				log.Printf("Error generating cipher for port: %s %v\n", port, err)
 				conn.Close()
@@ -370,6 +374,7 @@ func enoughOptions(config *ss.Config) bool {
 	return config.ServerPort != 0 && config.Password != ""
 }
 
+//检查端口和密码，以多端口多密码为准。单端口单密码，也保存到多端口多密码的map中
 func unifyPortPassword(config *ss.Config) (err error) {
 	if len(config.PortPassword) == 0 { // this handles both nil PortPassword and empty one
 		if !enoughOptions(config) {
@@ -409,42 +414,52 @@ func main() {
 
 	//打印版本
 	if printVer {
-		ss.PrintVersion() //util.go
+		ss.PrintVersion()
 		os.Exit(0)
 	}
 
 	ss.SetDebug(debug) //debug模式
 
+	//加密方法，后缀-auth的情况，代表需要加密
 	if strings.HasSuffix(cmdConfig.Method, "-auth") {
 		cmdConfig.Method = cmdConfig.Method[:len(cmdConfig.Method)-5]
 		cmdConfig.Auth = true
 	}
 
 	var err error
-	config, err = ss.ParseConfig(configFile)
-	if err != nil {
-		if !os.IsNotExist(err) {
+	config, err = ss.ParseConfig(configFile) //若以配置文件的方式加载项目
+	if err != nil {                          //文件不存在，以命令行参数为准
+		if !os.IsNotExist(err) { //日志显示，读取文件错误
 			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", configFile, err)
 			os.Exit(1)
 		}
 		config = &cmdConfig
-		ss.UpdateConfig(config, config)
+		ss.UpdateConfig(config, config) //用后一个参数的配置覆盖前一个参数的配置
 	} else {
-		ss.UpdateConfig(config, &cmdConfig)
+		ss.UpdateConfig(config, &cmdConfig) //用后一个参数的配置覆盖前一个参数的配置，也就是命令行参数为准
 	}
-	if config.Method == "" {
+
+	if config.Method == "" { //默认，加密方法
 		config.Method = "aes-256-cfb"
 	}
+
+	//检查用户限定的加密方式，是否在程序提供的加密范围内
 	if err = ss.CheckCipherMethod(config.Method); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+
+	//端口密码进行处理
 	if err = unifyPortPassword(config); err != nil {
 		os.Exit(1)
 	}
+
+	//用户级操作系统线程数
 	if core > 0 {
 		runtime.GOMAXPROCS(core)
 	}
+
+	//根据端口和密码信息，多协程
 	for port, password := range config.PortPassword {
 		go run(port, password, config.Auth)
 		if udp {

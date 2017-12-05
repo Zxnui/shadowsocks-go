@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/salsa20/salsa"
 )
 
+//空密码错误
 var errEmptyPassword = errors.New("empty key")
 
 func md5sum(d []byte) []byte {
@@ -150,12 +151,14 @@ func newSalsa20Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 	return &c, nil
 }
 
+//加密相关信息
 type cipherInfo struct {
 	keyLen    int
 	ivLen     int
 	newStream func(key, iv []byte, doe DecOrEnc) (cipher.Stream, error)
 }
 
+//加密方式
 var cipherMethod = map[string]*cipherInfo{
 	"aes-128-cfb":   {16, 16, newAESCFBStream},
 	"aes-192-cfb":   {24, 16, newAESCFBStream},
@@ -172,6 +175,7 @@ var cipherMethod = map[string]*cipherInfo{
 	"salsa20":       {32, 8, newSalsa20Stream},
 }
 
+//检查用户限定的加密方式，是否在程序提供的加密范围内
 func CheckCipherMethod(method string) error {
 	if method == "" {
 		method = "aes-256-cfb"
@@ -199,14 +203,14 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 	if password == "" {
 		return nil, errEmptyPassword
 	}
-	var ota bool
+	var ota bool //加密
 	if strings.HasSuffix(strings.ToLower(method), "-auth") {
 		method = method[:len(method)-5] // len("-auth") = 5
 		ota = true
 	} else {
 		ota = false
 	}
-	mi, ok := cipherMethod[method]
+	mi, ok := cipherMethod[method] //获取加密方式
 	if !ok {
 		return nil, errors.New("Unsupported encryption method: " + method)
 	}
