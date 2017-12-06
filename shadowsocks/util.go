@@ -29,6 +29,7 @@ func IsFileExists(path string) (bool, error) {
 	return false, err
 }
 
+//sha1加密
 func HmacSha1(key []byte, data []byte) []byte {
 	hmacSha1 := hmac.New(sha1.New, key)
 	hmacSha1.Write(data)

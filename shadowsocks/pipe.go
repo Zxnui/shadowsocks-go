@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+//设置超时
 func SetReadTimeout(c net.Conn) {
 	if readTimeout != 0 {
 		c.SetReadDeadline(time.Now().Add(readTimeout))
@@ -15,12 +16,13 @@ func SetReadTimeout(c net.Conn) {
 }
 
 // PipeThenClose copies data from src to dst, closes dst when done.
+//从src链接中获取数据，发送到dst中，成功后，关闭dst
 func PipeThenClose(src, dst net.Conn) {
 	defer dst.Close()
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
 	for {
-		SetReadTimeout(src)
+		SetReadTimeout(src) //链接超时
 		n, err := src.Read(buf)
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
@@ -46,6 +48,7 @@ func PipeThenClose(src, dst net.Conn) {
 }
 
 // PipeThenClose copies data from src to dst, closes dst when done, with ota verification.
+//src local过来的链接 dst 用户想要访问的真实服务器和server之间的链接
 func PipeThenCloseOta(src *Conn, dst net.Conn) {
 	const (
 		dataLenLen  = 2
