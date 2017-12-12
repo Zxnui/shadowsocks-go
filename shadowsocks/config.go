@@ -40,6 +40,7 @@ type Config struct {
 //配置文件中，超时时间
 var readTimeout time.Duration
 
+//获取server列表
 func (config *Config) GetServerArray() []string {
 	// Specifying multiple servers in the "server" options is deprecated.
 	// But for backward compatiblity, keep this.

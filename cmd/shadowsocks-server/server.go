@@ -39,8 +39,11 @@ const (
 var debug ss.DebugLog
 var udp bool
 
+// 基于sock5协议
+// host 目的地ip+port	ota是否加密
+// 解析从local中来的数据，获取local中用户需要访问的真实服务器地址
 func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
-	ss.SetReadTimeout(conn)
+	ss.SetReadTimeout(conn) //超时设置
 
 	// buf size should at least have the same size with the largest possible
 	// request size (when addrType is 3, domain name has at most 256 bytes)
@@ -87,7 +90,7 @@ func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
 	port := binary.BigEndian.Uint16(buf[reqEnd-2 : reqEnd])
 	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 	// if specified one time auth enabled, we should verify this
-	if auth || addrType&ss.OneTimeAuthMask > 0 {
+	if auth || addrType&ss.OneTimeAuthMask > 0 { //是否加密
 		ota = true
 		if _, err = io.ReadFull(conn, buf[reqEnd:reqEnd+lenHmacSha1]); err != nil {
 			return
@@ -108,10 +111,12 @@ const logCntDelta = 100
 var connCnt int
 var nextLogConnCnt int = logCntDelta
 
+//将local发送过来的用户数据，解析(若加密，则解密)后，发送给用户需要访问的真实服务器
+//将用户访问的真实服务器返回的数据，返回给local,返回的数据没有加密啊，有被拦截的风险吧
 func handleConnection(conn *ss.Conn, auth bool) {
 	var host string
 
-    //简单的记录链接数
+	//简单的记录链接数
 	connCnt++ // this maybe not accurate, but should be enough
 	if connCnt-nextLogConnCnt >= 0 {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
@@ -137,6 +142,7 @@ func handleConnection(conn *ss.Conn, auth bool) {
 		}
 	}()
 
+	//解析协议，获取目的地ip地址，和加密情况
 	host, ota, err := getRequest(conn, auth)
 	if err != nil {
 		log.Println("error getting request", conn.RemoteAddr(), conn.LocalAddr(), err)
@@ -150,7 +156,7 @@ func handleConnection(conn *ss.Conn, auth bool) {
 		return
 	}
 	debug.Println("connecting", host)
-	remote, err := net.Dial("tcp", host)
+	remote, err := net.Dial("tcp", host) //链接服务器
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
@@ -169,12 +175,14 @@ func handleConnection(conn *ss.Conn, auth bool) {
 	if debug {
 		debug.Printf("piping %s<->%s ota=%v connOta=%v", conn.RemoteAddr(), host, ota, conn.IsOta())
 	}
+
+	//从local过来的链接，读取数据，写数据到目标服务器
 	if ota {
-		go ss.PipeThenCloseOta(conn, remote)
+		go ss.PipeThenCloseOta(conn, remote) //从local过来的数据被加密，解析后，发送到目标服务器
 	} else {
 		go ss.PipeThenClose(conn, remote)
 	}
-	ss.PipeThenClose(remote, conn)
+	ss.PipeThenClose(remote, conn) //从目标服务器返回的数据，读取后，发送给local
 	closed = true
 	return
 }
@@ -340,7 +348,7 @@ func run(port, password string, auth bool) {
 				continue
 			}
 		}
-		go handleConnection(ss.NewConn(conn, cipher.Copy()), auth)//处理链接
+		go handleConnection(ss.NewConn(conn, cipher.Copy()), auth) //每个协程，处理一次链接
 	}
 }
 

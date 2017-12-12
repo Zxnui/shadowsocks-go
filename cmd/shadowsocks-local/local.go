@@ -35,9 +35,11 @@ const (
 )
 
 func init() {
-	rand.Seed(time.Now().Unix())
+	rand.Seed(time.Now().Unix())//随机种子
 }
 
+// 基于sock5协议
+// 解析从本地来的请求，确认使用的协议正确
 func handShake(conn net.Conn) (err error) {
 	const (
 		idVer     = 0
@@ -56,11 +58,16 @@ func handShake(conn net.Conn) (err error) {
 	if n, err = io.ReadAtLeast(conn, buf, idNmethod+1); err != nil {
 		return
 	}
+
+	//协议必须是socke5
 	if buf[idVer] != socksVer5 {
 		return errVer
 	}
-	nmethod := int(buf[idNmethod])
-	msgLen := nmethod + 2
+
+	nmethod := int(buf[idNmethod])//链接信息长度 ip4长度 
+	msgLen := nmethod + 2//加上端口长度
+
+	//长度符合规定
 	if n == msgLen { // handshake done, common case
 		// do nothing, jump directly to send confirmation
 	} else if n < msgLen { // has more methods to read, rare case
@@ -75,6 +82,10 @@ func handShake(conn net.Conn) (err error) {
 	return
 }
 
+// 基于sock5协议
+// host 本地想要访问的目的地ip+port
+// rawaddr 实际网络地址ip4 ip6 或域名
+// 解析从本地中来的数据，获取用户需要访问的真实服务器地址
 func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 	const (
 		idVer   = 0
@@ -123,6 +134,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		return
 	}
 
+	//校验数据长度
 	if n == reqLen {
 		// common case, do nothing
 	} else if n < reqLen { // rare case
@@ -136,6 +148,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 
 	rawaddr = buf[idType:reqLen]
 
+	//TODO 这段好像有点问题，只有在debug的情况，host才有数据？
 	if debug {
 		switch buf[idType] {
 		case typeIPv4:
@@ -162,7 +175,9 @@ var servers struct {
 	failCnt   []int // failed connection count
 }
 
+//获取可用的远程服务端，同时完成密码加密
 func parseServerConfig(config *ss.Config) {
+	//方法，获取端口是否存在
 	hasPort := func(s string) bool {
 		_, port, err := net.SplitHostPort(s)
 		if err != nil {
@@ -171,18 +186,18 @@ func parseServerConfig(config *ss.Config) {
 		return port != ""
 	}
 
-	if len(config.ServerPassword) == 0 {
+	if len(config.ServerPassword) == 0 {//多个服务器，密码使用一个
 		method := config.Method
 		if config.Auth {
 			method += "-auth"
 		}
 		// only one encryption table
-		cipher, err := ss.NewCipher(method, config.Password)
+		cipher, err := ss.NewCipher(method, config.Password)//密码加密，方法在encrypt.go中
 		if err != nil {
 			log.Fatal("Failed generating ciphers:", err)
 		}
-		srvPort := strconv.Itoa(config.ServerPort)
-		srvArr := config.GetServerArray()
+		srvPort := strconv.Itoa(config.ServerPort)//服务端口
+		srvArr := config.GetServerArray()//获取server列表
 		n := len(srvArr)
 		servers.srvCipher = make([]*ServerCipher, n)
 
@@ -190,11 +205,11 @@ func parseServerConfig(config *ss.Config) {
 			if hasPort(s) {
 				log.Println("ignore server_port option for server", s)
 				servers.srvCipher[i] = &ServerCipher{s, cipher}
-			} else {
+			} else {//服务列表中没有端口，则使用公共的端口
 				servers.srvCipher[i] = &ServerCipher{net.JoinHostPort(s, srvPort), cipher}
 			}
 		}
-	} else {
+	} else {//多个服务器，每个有自己的密码
 		// multiple servers
 		n := len(config.ServerPassword)
 		servers.srvCipher = make([]*ServerCipher, n)
@@ -205,8 +220,10 @@ func parseServerConfig(config *ss.Config) {
 			if len(serverInfo) < 2 || len(serverInfo) > 3 {
 				log.Fatalf("server %v syntax error\n", serverInfo)
 			}
-			server := serverInfo[0]
-			passwd := serverInfo[1]
+			server := serverInfo[0]//服务端ip和端口
+			passwd := serverInfo[1]//服务端密码
+
+			//加密方式
 			encmethod := ""
 			if len(serverInfo) == 3 {
 				encmethod = serverInfo[2]
@@ -217,19 +234,20 @@ func parseServerConfig(config *ss.Config) {
 			// Using "|" as delimiter is safe here, since no encryption
 			// method contains it in the name.
 			cacheKey := encmethod + "|" + passwd
-			cipher, ok := cipherCache[cacheKey]
+			cipher, ok := cipherCache[cacheKey]//重复的密码，不需要再次进行加密运算
 			if !ok {
 				var err error
-				cipher, err = ss.NewCipher(encmethod, passwd)
+				cipher, err = ss.NewCipher(encmethod, passwd)//密码加密
 				if err != nil {
 					log.Fatal("Failed generating ciphers:", err)
 				}
-				cipherCache[cacheKey] = cipher
+				cipherCache[cacheKey] = cipher//放入缓存，防止密码相同，二次加密
 			}
 			servers.srvCipher[i] = &ServerCipher{server, cipher}
 			i++
 		}
 	}
+
 	servers.failCnt = make([]int, len(servers.srvCipher))
 	for _, se := range servers.srvCipher {
 		log.Println("available remote server", se.server)
@@ -237,19 +255,21 @@ func parseServerConfig(config *ss.Config) {
 	return
 }
 
+// addr 本地想要访问的目的地ip+port  debug才能获取？卧槽，addr只是为了，打印而已
+// rawaddr 实际网络地址ip4 ip6 或域名
 func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn, err error) {
-	se := servers.srvCipher[serverId]
+	se := servers.srvCipher[serverId]//获取对应服务的密码加密
 	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
 	if err != nil {
 		log.Println("error connecting to shadowsocks server:", err)
 		const maxFailCnt = 30
-		if servers.failCnt[serverId] < maxFailCnt {
+		if servers.failCnt[serverId] < maxFailCnt {//控制重试概率
 			servers.failCnt[serverId]++
 		}
 		return nil, err
 	}
 	debug.Printf("connected to %s via %s\n", addr, se.server)
-	servers.failCnt[serverId] = 0
+	servers.failCnt[serverId] = 0//一旦成功链接，则视为服务端正常。重置参数
 	return
 }
 
@@ -257,12 +277,16 @@ func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn
 // connection failure, try the next server. A failed server will be tried with
 // some probability according to its fail count, so we can discover recovered
 // servers.
+//英文注解很清晰了
 func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) {
 	const baseFailCnt = 20
-	n := len(servers.srvCipher)
+	n := len(servers.srvCipher)//服务端数量
 	skipped := make([]int, 0)
+
 	for i := 0; i < n; i++ {
 		// skip failed server, but try it with some probability
+		//服务端链接失败过，95%~2%的概率重新链接
+		//下次在失败，failCnt+1。降低重试的几率。动态控制，减少访问容易失败的服务器；
 		if servers.failCnt[i] > 0 && rand.Intn(servers.failCnt[i]+baseFailCnt) != 0 {
 			skipped = append(skipped, i)
 			continue
@@ -282,6 +306,7 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 	return nil, err
 }
 
+//local接受本地发出的数据，确认协议正确
 func handleConnection(conn net.Conn) {
 	if debug {
 		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
@@ -294,11 +319,16 @@ func handleConnection(conn net.Conn) {
 	}()
 
 	var err error = nil
+
+	//确认本地数据协议sock5正确
 	if err = handShake(conn); err != nil {
 		log.Println("socks handshake:", err)
 		return
 	}
+
+	//解析获取用户想要访问的网络地址
 	rawaddr, addr, err := getRequest(conn)
+
 	if err != nil {
 		log.Println("error getting request:", err)
 		return
@@ -306,7 +336,7 @@ func handleConnection(conn net.Conn) {
 	// Sending connection established message immediately to client.
 	// This some round trip time for creating socks connection with the client.
 	// But if connection failed, the client will get connection reset error.
-	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
+	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})//告诉本地，local成功接受数据
 	if err != nil {
 		debug.Println("send connection confirmation:", err)
 		return
@@ -331,8 +361,9 @@ func handleConnection(conn net.Conn) {
 	debug.Println("closed connection to", addr)
 }
 
+//listenAddr 本地地址和监控端口，若又数据来，则处理
 func run(listenAddr string) {
-	ln, err := net.Listen("tcp", listenAddr)
+	ln, err := net.Listen("tcp", listenAddr)//本地监听
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -343,10 +374,11 @@ func run(listenAddr string) {
 			log.Println("accept:", err)
 			continue
 		}
-		go handleConnection(conn)
+		go handleConnection(conn)//每个协程，处理一次链接
 	}
 }
 
+//检查配置文件必备参数，是否齐全
 func enoughOptions(config *ss.Config) bool {
 	return config.Server != nil && config.ServerPort != 0 &&
 		config.LocalPort != 0 && config.Password != ""
@@ -359,7 +391,7 @@ func main() {
 	var cmdConfig ss.Config
 	var printVer bool
 
-	flag.BoolVar(&printVer, "version", false, "print version")
+	flag.BoolVar(&printVer, "version", false, "print version")//是否打印版本
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
 	flag.StringVar(&cmdServer, "s", "", "server address")
 	flag.StringVar(&cmdLocal, "b", "", "local address, listen only to this address if specified")
@@ -373,6 +405,7 @@ func main() {
 
 	flag.Parse()
 
+	//版本信息
 	if printVer {
 		ss.PrintVersion()
 		os.Exit(0)
@@ -390,13 +423,13 @@ func main() {
 	// If no config file in current directory, try search it in the binary directory
 	// Note there's no portable way to detect the binary directory.
 	binDir := path.Dir(os.Args[0])
-	if (!exists || err != nil) && binDir != "" && binDir != "." {
+	if (!exists || err != nil) && binDir != "" && binDir != "." {//配置文件不存在，从当前目录获取配置
 		oldConfig := configFile
 		configFile = path.Join(binDir, "config.json")
 		log.Printf("%s not found, try config file %s\n", oldConfig, configFile)
 	}
 
-	config, err := ss.ParseConfig(configFile)
+	config, err := ss.ParseConfig(configFile)//解析配置文件
 	if err != nil {
 		config = &cmdConfig
 		if !os.IsNotExist(err) {
@@ -404,11 +437,15 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		ss.UpdateConfig(config, &cmdConfig)
+		ss.UpdateConfig(config, &cmdConfig)//用后一个参数的配置覆盖前一个参数的配置，也就是命令行参数为准
 	}
+
+	//加密方式
 	if config.Method == "" {
 		config.Method = "aes-256-cfb"
 	}
+
+	////检查配置文件必备参数，是否齐全
 	if len(config.ServerPassword) == 0 {
 		if !enoughOptions(config) {
 			fmt.Fprintln(os.Stderr, "must specify server address, password and both server/local port")
@@ -424,7 +461,7 @@ func main() {
 		}
 	}
 
-	parseServerConfig(config)
+	parseServerConfig(config)//获取可用的远程服务端，同时完成密码加密
 
 	run(cmdLocal + ":" + strconv.Itoa(config.LocalPort))
 }

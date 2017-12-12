@@ -59,12 +59,13 @@ func RawAddr(addr string) (buf []byte, err error) {
 // rawaddr shoud contain part of the data in socks request, starting from the
 // ATYP field. (Refer to rfc1928 for more information.)
 func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, err error) {
-	conn, err := net.Dial("tcp", server)
+	conn, err := net.Dial("tcp", server)//链接server端
 	if err != nil {
 		return
 	}
 	c = NewConn(conn, cipher)
 	if cipher.ota {
+		//加密初始化
 		if c.enc == nil {
 			if _, err = c.initEncrypt(); err != nil {
 				return
@@ -75,6 +76,7 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, er
 		rawaddr[0] |= OneTimeAuthMask
 		rawaddr = otaConnectAuth(cipher.iv, cipher.key, rawaddr)
 	}
+	//传输加密数据
 	if _, err = c.write(rawaddr); err != nil {
 		c.Close()
 		return nil, err
